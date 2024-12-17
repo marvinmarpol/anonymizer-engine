@@ -1,0 +1,533 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>service: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/marvinmarpol/golang-boilerplate/internal/protection/service/service_impl.go (7.4%)</option>
+				
+				<option value="file1">github.com/marvinmarpol/golang-boilerplate/internal/protection/service/service_impl_dec.go (47.5%)</option>
+				
+				<option value="file2">github.com/marvinmarpol/golang-boilerplate/internal/protection/service/service_impl_enc.go (30.8%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package service
+
+import (
+        "context"
+        "crypto/rsa"
+        "errors"
+        "fmt"
+        "sync"
+        "time"
+
+        "github.com/marvinmarpol/golang-boilerplate/internal/pkg/utils/cryptho"
+        "github.com/marvinmarpol/golang-boilerplate/internal/protection/command"
+        "github.com/marvinmarpol/golang-boilerplate/internal/protection/domain/mask"
+        "github.com/marvinmarpol/golang-boilerplate/internal/protection/entity"
+        "github.com/marvinmarpol/golang-boilerplate/internal/protection/query"
+        "github.com/sirupsen/logrus"
+
+        gonanoid "github.com/matoous/go-nanoid/v2"
+)
+
+type ServiceImpl struct {
+        Commands command.Commands
+        Queries  query.Queries
+        PubKey   *rsa.PublicKey
+        PriKey   *rsa.PrivateKey
+}
+
+func NewServiceImpl(cmd command.Commands, q query.Queries, pubKey *rsa.PublicKey, priKey *rsa.PrivateKey) *ServiceImpl <span class="cov8" title="1">{
+        return &amp;ServiceImpl{cmd, q, pubKey, priKey}
+}</span>
+
+func (s *ServiceImpl) Deidentify(ctx context.Context, cmd interface{}) (interface{}, error) <span class="cov8" title="1">{
+        s.traverseMapAndEncrypt(ctx, cmd, keyPrefixes, valuePrefixes, decryptPrefix)
+        return cmd, nil
+}</span>
+func (s *ServiceImpl) Reidentify(ctx context.Context, cmd interface{}) (interface{}, error) <span class="cov8" title="1">{
+        s.traverseMapAndDecrypt(ctx, cmd, keyPrefixes, valuePrefixes, decryptPrefix)
+        return cmd, nil
+}</span>
+func (s *ServiceImpl) GetCypher(ctx context.Context, cmd entity.GetCypherPayload) (interface{}, error) <span class="cov0" title="0">{
+        return s.Queries.GetCypherQuery.Handle(ctx, query.GetCypherQuery{Token: cmd.Token})
+}</span>
+
+func (s *ServiceImpl) RotateKeys(ctx context.Context, cmd entity.RotatePayload) (interface{}, error) <span class="cov0" title="0">{
+        // init required vars
+        wg := sync.WaitGroup{}
+        mu := sync.Mutex{}
+        limit := cmd.BatchSize
+        offset := 0
+        counter := 0
+        async := 0
+
+        // loop until reach max or no more result
+        for </span><span class="cov0" title="0">{
+                candidates, err := s.Queries.GetRotateCandidateQuery.Handle(ctx, query.GetRotateCandidateQuery{
+                        Limit:         limit,
+                        Offset:        offset,
+                        DayDifference: cmd.DayDifference,
+                })
+                if err != nil </span><span class="cov0" title="0">{
+                        return counter, err
+                }</span>
+
+                // rotate key of the retrieved masks
+                <span class="cov0" title="0">for _, item := range candidates.Result </span><span class="cov0" title="0">{
+                        wg.Add(1)
+
+                        // Protect async counter increment with a mutex
+                        mu.Lock()
+                        async++
+                        mu.Unlock()
+
+                        go s.rotateKey(context.Background(), item, &amp;wg, &amp;async, &amp;mu)
+
+                        // Check if we reached the max async limit
+                        mu.Lock()
+                        if async &gt;= cmd.MaxAsyncProcess </span><span class="cov0" title="0">{
+                                mu.Unlock() // Unlock before waiting
+                                wg.Wait()   // Wait for goroutines to finish
+                                async = 0   // Reset async counter after waiting
+                        }</span> else<span class="cov0" title="0"> {
+                                mu.Unlock()
+                        }</span>
+                }
+                <span class="cov0" title="0">time.Sleep(time.Duration(cmd.MsDelayEachJob) * time.Millisecond)
+
+                // count retrieved row, break if reach max or no data retrieved
+                counter += len(candidates.Result)
+                if len(candidates.Result) &lt; 1 || counter &gt; cmd.Max </span><span class="cov0" title="0">{
+                        break</span>
+                }
+
+                // set offset for next rows
+                <span class="cov0" title="0">offset += candidates.Limit</span>
+        }
+
+        <span class="cov0" title="0">return counter, nil</span>
+}
+
+func (s *ServiceImpl) rotateKey(ctx context.Context, item mask.Mask, wg *sync.WaitGroup, asyncCounter *int, mu *sync.Mutex) error <span class="cov0" title="0">{
+        defer wg.Done()
+
+        originalKey, err := cryptho.RsaDecrypt(s.PriKey, item.Key)
+        if err != nil </span><span class="cov0" title="0">{
+                logrus.WithContext(ctx).WithField("err", err).Error("Failed to get original key")
+                return err
+        }</span>
+        <span class="cov0" title="0">plainText, err := cryptho.AESDecrypt(item.Cypher, originalKey)
+        if err != nil </span><span class="cov0" title="0">{
+                logrus.WithContext(ctx).WithField("err", err).Error("Failed to get plaintext")
+                return err
+        }</span>
+        <span class="cov0" title="0">newKey, err := gonanoid.Generate(possibleChars, encKeyLength)
+        if err != nil </span><span class="cov0" title="0">{
+                logrus.WithContext(ctx).WithField("err", err).Error("Failed to create new key")
+                return err
+        }</span>
+        <span class="cov0" title="0">newCypher, err := cryptho.AESEncrypt(plainText, newKey)
+        if err != nil </span><span class="cov0" title="0">{
+                logrus.WithContext(ctx).WithField("err", err).Error("Failed to create new cypher")
+                return err
+        }</span>
+        <span class="cov0" title="0">newEncKey, err := cryptho.RsaEncrypt(s.PubKey, newKey)
+        if err != nil </span><span class="cov0" title="0">{
+                logrus.WithContext(ctx).WithField("err", err).Error("Failed to create new encryption key")
+                return err
+        }</span>
+
+        // update mask with new key and cypher
+        <span class="cov0" title="0">s.Commands.UpdateMaskCommand.Handle(context.Background(), command.UpdateMaskCommand{
+                Token:  item.Token,
+                Key:    newEncKey,
+                Cypher: newCypher,
+        })
+
+        // Protect asyncCounter using mutex
+        mu.Lock()
+        *asyncCounter--
+        mu.Unlock()
+
+        return nil</span>
+}
+
+// retry function
+func RetryUntilSuccess[T any](fn func() (T, error), maxAttempts int) (T, error) <span class="cov0" title="0">{
+        var result T
+        var err error
+
+        for i := 0; i &lt; maxAttempts; i++ </span><span class="cov0" title="0">{
+                result, err = fn()
+                if err == nil </span><span class="cov0" title="0">{
+                        return result, nil // Success, no error
+                }</span>
+
+                <span class="cov0" title="0">logrus.Error(fmt.Sprintf("Error: %v Counter: %v", err, i+1))</span>
+        }
+
+        <span class="cov0" title="0">return result, errors.New("max attempts reached without success")</span>
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package service
+
+import (
+        "context"
+        "strings"
+
+        "github.com/marvinmarpol/golang-boilerplate/internal/pkg/utils/cryptho"
+        "github.com/marvinmarpol/golang-boilerplate/internal/protection/query"
+        "github.com/sirupsen/logrus"
+)
+
+func (s *ServiceImpl) traverseMapAndDecrypt(ctx context.Context, data interface{}, keyPrefixes []string, valuePrefixes []string, decryptPrefix string) <span class="cov8" title="1">{
+        switch vv := data.(type) </span>{
+        case []interface{}:<span class="cov0" title="0">
+                for i, item := range vv </span><span class="cov0" title="0">{
+                        switch itemTyped := item.(type) </span>{
+                        case map[string]interface{}:<span class="cov0" title="0">
+                                // Recurse into nested maps
+                                s.traverseMapAndDecrypt(ctx, itemTyped, keyPrefixes, valuePrefixes, decryptPrefix)</span>
+
+                        case []interface{}:<span class="cov0" title="0">
+                                // Recurse into nested slices
+                                s.traverseMapAndDecrypt(ctx, itemTyped, keyPrefixes, valuePrefixes, decryptPrefix)</span>
+
+                        default:<span class="cov0" title="0">
+                                if strVal, ok := item.(string); ok &amp;&amp; strings.HasPrefix(strVal, decryptPrefix) </span><span class="cov0" title="0">{
+                                        // decrypt to original value
+                                        original, err := s.decryptMask(ctx, strVal)
+                                        if err != nil </span><span class="cov0" title="0">{
+                                                continue</span>
+                                        }
+
+                                        // assign encrypted value
+                                        <span class="cov0" title="0">vv[i] = original</span>
+                                }
+
+                        }
+                }
+
+        case map[string]interface{}:<span class="cov8" title="1">
+                for key, value := range vv </span><span class="cov8" title="1">{
+                        switch v := value.(type) </span>{
+                        case map[string]interface{}:<span class="cov8" title="1">
+                                s.traverseMapAndDecrypt(ctx, v, keyPrefixes, valuePrefixes, decryptPrefix)</span>
+
+                        case []interface{}:<span class="cov0" title="0">
+                                // Traverse slices
+                                for i, item := range v </span><span class="cov0" title="0">{
+                                        if nestedMap, ok := item.(map[string]interface{}); ok </span><span class="cov0" title="0">{
+                                                s.traverseMapAndDecrypt(ctx, nestedMap, keyPrefixes, valuePrefixes, decryptPrefix)
+                                        }</span> else<span class="cov0" title="0"> {
+                                                // Check if the value in the slice matches any of the value prefixes
+                                                if strVal, ok := item.(string); ok &amp;&amp; strings.HasPrefix(strVal, decryptPrefix) </span><span class="cov0" title="0">{
+                                                        // decrypt to original value
+                                                        original, err := s.decryptMask(ctx, strVal)
+                                                        if err != nil </span><span class="cov0" title="0">{
+                                                                continue</span>
+                                                        }
+
+                                                        <span class="cov0" title="0">v[i] = original</span>
+                                                }
+                                        }
+                                }
+
+                        default:<span class="cov8" title="1">
+                                if strVal, ok := value.(string); ok &amp;&amp; strings.HasPrefix(strVal, decryptPrefix) </span><span class="cov8" title="1">{
+                                        // decrypt to original value
+                                        original, err := s.decryptMask(ctx, strVal)
+                                        if err != nil </span><span class="cov0" title="0">{
+                                                continue</span>
+                                        }
+
+                                        // assign encrypted value
+                                        <span class="cov8" title="1">vv[key] = original</span>
+                                }
+
+                        }
+                }
+        }
+
+}
+
+func (s *ServiceImpl) decryptMask(ctx context.Context, strVal string) (string, error) <span class="cov8" title="1">{
+        token := ""
+        splits := strings.SplitN(strVal, decryptPrefix, 2)
+        if len(splits) == 2 </span><span class="cov8" title="1">{
+                token = splits[1]
+        }</span>
+
+        // get row from mask table by token
+        <span class="cov8" title="1">maskI, err := s.Queries.GetMaskQuery.Handle(ctx, query.GetMaskQuery{Token: token})
+        if err != nil </span><span class="cov0" title="0">{
+                logrus.WithContext(ctx).WithField("err", err).Error("Failed to get mask")
+                return "", err
+        }</span>
+
+        // decrypt the encrypted key
+        <span class="cov8" title="1">maskT := maskI.Result
+        originalKey, _ := cryptho.RsaDecrypt(s.PriKey, maskT.Key)
+
+        // decrypt to original value
+        original, err := cryptho.AESDecrypt(maskT.Cypher, originalKey)
+        if err != nil </span><span class="cov0" title="0">{
+                logrus.WithContext(ctx).WithField("err", err).Error("Failed to decrypt")
+        }</span>
+
+        <span class="cov8" title="1">return original, err</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package service
+
+import (
+        "context"
+        "fmt"
+        "strings"
+
+        "github.com/marvinmarpol/golang-boilerplate/internal/pkg/utils/cryptho"
+        "github.com/marvinmarpol/golang-boilerplate/internal/pkg/utils/tuple"
+        "github.com/marvinmarpol/golang-boilerplate/internal/protection/command"
+        "github.com/marvinmarpol/golang-boilerplate/internal/protection/query"
+        "github.com/sirupsen/logrus"
+
+        gonanoid "github.com/matoous/go-nanoid/v2"
+)
+
+func (s *ServiceImpl) traverseMapAndEncrypt(ctx context.Context, data interface{}, keyPrefixes []string, valuePrefixes []string, decryptPrefix string) <span class="cov8" title="1">{
+        switch vv := data.(type) </span>{
+        case []interface{}:<span class="cov0" title="0">
+                for i, item := range vv </span><span class="cov0" title="0">{
+                        switch itemTyped := item.(type) </span>{
+                        case map[string]interface{}:<span class="cov0" title="0">
+                                // Recurse into nested maps
+                                s.traverseMapAndEncrypt(ctx, itemTyped, keyPrefixes, valuePrefixes, decryptPrefix)</span>
+
+                        case []interface{}:<span class="cov0" title="0">
+                                // Recurse into nested slices
+                                s.traverseMapAndEncrypt(ctx, itemTyped, keyPrefixes, valuePrefixes, decryptPrefix)</span>
+
+                        default:<span class="cov0" title="0">
+                                if strVal, ok := item.(string); ok &amp;&amp; tuple.HasPrefixInList(&amp;strVal, &amp;valuePrefixes, true) &amp;&amp; strings.TrimSpace(strVal) != "" </span><span class="cov0" title="0">{
+                                        token, err := s.createMask(ctx, strVal)
+                                        if err != nil </span><span class="cov0" title="0">{
+                                                continue</span>
+                                        }
+
+                                        // assign encrypted value
+                                        <span class="cov0" title="0">vv[i] = decryptPrefix + token</span>
+                                }
+                        }
+                }
+
+        case map[string]interface{}:<span class="cov8" title="1">
+                for key, value := range vv </span><span class="cov8" title="1">{
+                        switch v := value.(type) </span>{
+                        case map[string]interface{}:<span class="cov8" title="1">
+                                // Recurse into nested maps
+                                s.traverseMapAndEncrypt(ctx, v, keyPrefixes, valuePrefixes, decryptPrefix)</span>
+
+                        case []interface{}:<span class="cov0" title="0">
+                                // Traverse slices
+                                for i, item := range v </span><span class="cov0" title="0">{
+                                        if nestedMap, ok := item.(map[string]interface{}); ok </span><span class="cov0" title="0">{
+                                                s.traverseMapAndEncrypt(ctx, nestedMap, keyPrefixes, valuePrefixes, decryptPrefix)
+                                        }</span> else<span class="cov0" title="0"> {
+                                                // Check if the value in the slice matches any of the value prefixes
+                                                if strVal, ok := item.(string); ok &amp;&amp; tuple.HasPrefixInList(&amp;strVal, &amp;valuePrefixes, true) &amp;&amp; strings.TrimSpace(strVal) != "" </span><span class="cov0" title="0">{
+                                                        token, err := s.createMask(ctx, strVal)
+                                                        if err != nil </span><span class="cov0" title="0">{
+                                                                continue</span>
+                                                        }
+
+                                                        // assign encrypted value
+                                                        <span class="cov0" title="0">v[i] = decryptPrefix + token</span>
+                                                }
+                                        }
+                                }
+
+                        default:<span class="cov8" title="1">
+                                // Check if key has any of the specified prefixes and encrypt its value
+                                if tuple.HasPrefixInList(&amp;key, &amp;keyPrefixes, false) </span><span class="cov0" title="0">{
+                                        strVal := fmt.Sprintf("%v", value) // Convert value to string if needed
+                                        if strings.TrimSpace(strVal) == "" </span><span class="cov0" title="0">{
+                                                continue</span>
+                                        }
+
+                                        <span class="cov0" title="0">token, err := s.createMask(ctx, strVal)
+                                        if err != nil </span><span class="cov0" title="0">{
+                                                continue</span>
+                                        }
+
+                                        // assign encrypted value
+                                        <span class="cov0" title="0">vv[key] = decryptPrefix + token</span>
+                                }
+
+                                // Check if value is a string and matches any of the value prefixes
+                                <span class="cov8" title="1">if strVal, ok := value.(string); ok &amp;&amp; tuple.HasPrefixInList(&amp;strVal, &amp;valuePrefixes, true) &amp;&amp; strings.TrimSpace(strVal) != "" </span><span class="cov8" title="1">{
+                                        token, err := s.createMask(ctx, strVal)
+                                        if err != nil </span><span class="cov0" title="0">{
+                                                continue</span>
+                                        }
+
+                                        // assign encrypted value
+                                        <span class="cov8" title="1">vv[key] = decryptPrefix + token</span>
+                                }
+                        }
+                }
+        }
+
+}
+
+func (s *ServiceImpl) createMask(ctx context.Context, strVal string) (string, error) <span class="cov8" title="1">{
+        token, err := gonanoid.Generate(possibleChars, len(strVal))
+        if err != nil </span><span class="cov0" title="0">{
+                logrus.WithContext(ctx).WithField("err", err).Error("Failed to generate token")
+                return "", err
+        }</span>
+        <span class="cov8" title="1">hash, _ := cryptho.GenerateHash(strVal, cryptho.SHA256)
+        encKey, _ := gonanoid.Generate(possibleChars, encKeyLength)
+        encryptedValue, err := cryptho.AESEncrypt(strVal, encKey)
+        encKeyKey, _ := cryptho.RsaEncrypt(s.PubKey, encKey)
+        if err != nil </span><span class="cov0" title="0">{
+                logrus.WithContext(ctx).WithField("err", err).Error("Failed to encrypt")
+                return "", err
+        }</span>
+
+        // attempt to create mask
+        <span class="cov8" title="1">cmd := command.CreateMaskCommand{
+                Token:  token,
+                Hash:   hash,
+                Key:    encKeyKey,
+                Cypher: encryptedValue,
+        }
+        _, err = s.Commands.CreateMaskCommand.Handle(ctx, cmd)
+        // update token until no unique constraint error
+        if err != nil &amp;&amp; strings.Contains(err.Error(), pgErrConstrationID) </span><span class="cov0" title="0">{
+                if strings.Contains(err.Error(), hashConstraintKey) </span><span class="cov0" title="0">{
+                        oldToken, err := s.Queries.GetTokenQuery.Handle(ctx, query.GetTokenQuery{Hash: hash})
+                        if err != nil </span><span class="cov0" title="0">{
+                                logrus.WithContext(ctx).WithField("err", err).Error("Failed to get old token")
+                                return "", err
+                        }</span>
+                        <span class="cov0" title="0">token = oldToken.Result</span>
+                } else<span class="cov0" title="0"> {
+                        fn := func() (interface{}, error) </span><span class="cov0" title="0">{
+                                token, err = gonanoid.Generate(possibleChars, len(strVal))
+                                if err != nil </span><span class="cov0" title="0">{
+                                        return nil, err
+                                }</span>
+
+                                // retry create mask with new token
+                                <span class="cov0" title="0">cmd.Token = token
+                                return s.Commands.CreateMaskCommand.Handle(ctx, cmd)</span>
+                        }
+
+                        <span class="cov0" title="0">_, err := RetryUntilSuccess(fn, maxRetry)
+                        if err != nil </span><span class="cov0" title="0">{
+                                logrus.WithContext(ctx).WithField("ErrorRetry:", err).Error("Failed to retryupdate")
+                                return "", err
+                        }</span>
+                }
+        }
+
+        <span class="cov8" title="1">return token, nil</span>
+}
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>

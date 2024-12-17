@@ -1,0 +1,99 @@
+openapi: 3.0.0
+info:
+  title: golang-boilerplate
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+paths:
+  /deidentify:
+    post:
+      tags:
+        - default
+      summary: deidentify
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example:
+                content:
+                  name: encrypt-Marvin Mitchell
+                  nik: encrypt-3275123009911102
+                  motherName: encrypt-Ibunya Marvin
+                  dob: encrypt-01-01-2009
+                  address: encrypt-Jln Raya No 1A
+                  title: Mr.
+                  joinYear: 1990
+                metaData:
+                  creditCard:
+                    - 1111-2222-3333-4444
+                    - encrypt-4444-3333-2222-1111
+                    - extra: '123'
+                      cvc: encrypt-321
+      security:
+        - basicAuth: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /reidentify:
+    post:
+      tags:
+        - default
+      summary: reidentify
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example:
+                content:
+                  address: decrypt-{H#!%!ZwJT6]>)
+                  dob: decrypt-60Sra}Bi<O
+                  joinYear: 1990
+                  motherName: decrypt-tZFG(O%jU8<>A
+                  name: decrypt-9Fvn^tzijU+!2Gb
+                  nik: decrypt-KjD{&j>J>oRa)THl
+                  title: Mr.
+                metaData:
+                  creditCard:
+                    - 1111-2222-3333-4444
+                    - decrypt-_LiLulSnQiW@vE4I(q1
+                    - cvc: decrypt-lPo
+                      extra: '123'
+      security:
+        - basicAuth: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /rotate:
+    post:
+      tags:
+        - default
+      summary: rotate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example:
+                max: 100
+                batchSize: 20
+                dayDifference: 14
+                maxAsyncProcess: 5
+                msDelayEachJob: 50
+      security:
+        - basicAuth: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
